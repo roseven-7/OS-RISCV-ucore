@@ -1,0 +1,7 @@
+# Lab3 build outputs
+/lab3/code/obj/
+/lab3/code/bin/
+
+# Lab3 grading outputs
+/lab3/code/.gdb.in
+/lab3/code/.qemu.out
