@@ -6,10 +6,12 @@
 #include <memlayout.h>
 #include <mmu.h>
 #include <riscv.h>
+#include <sbi.h>
 #include <stdio.h>
 #include <trap.h>
 
 #define TICK_NUM 100
+#define SHUTDOWN_AFTER 10
 
 static void print_ticks() {
     cprintf("%d ticks\n", TICK_NUM);
@@ -81,7 +83,79 @@ void print_regs(struct pushregs *gpr) {
 }
 
 //lab3 function2 YOUR CODE
+void interrupt_handler(struct trapframe *tf) {
+    // The high bit identifies an interrupt; the remaining bits are its code.
+    uintptr_t cause = tf->cause & ~((uintptr_t)1 << (sizeof(uintptr_t) * 8 - 1));
 
+    switch (cause) {
+    case IRQ_S_TIMER:
+        // Re-arm on every tick so the timer keeps producing interrupts.
+        clock_set_next_event();
+        ticks++;
+        if (ticks % TICK_NUM == 0) {
+            print_ticks();
+            if (ticks / TICK_NUM >= SHUTDOWN_AFTER) {
+                sbi_shutdown();
+            }
+        }
+        break;
+    case IRQ_U_SOFT:
+        cprintf("User software interrupt\n");
+        break;
+    case IRQ_S_SOFT:
+        cprintf("Supervisor software interrupt\n");
+        break;
+    case IRQ_H_SOFT:
+        cprintf("Hypervisor software interrupt\n");
+        break;
+    case IRQ_M_SOFT:
+        cprintf("Machine software interrupt\n");
+        break;
+    case IRQ_U_TIMER:
+        cprintf("User timer interrupt\n");
+        break;
+    case IRQ_H_TIMER:
+        cprintf("Hypervisor timer interrupt\n");
+        break;
+    case IRQ_M_TIMER:
+        cprintf("Machine timer interrupt\n");
+        break;
+    case IRQ_U_EXT:
+        cprintf("User external interrupt\n");
+        break;
+    case IRQ_S_EXT:
+        cprintf("Supervisor external interrupt\n");
+        break;
+    case IRQ_H_EXT:
+        cprintf("Hypervisor external interrupt\n");
+        break;
+    case IRQ_M_EXT:
+        cprintf("Machine external interrupt\n");
+        break;
+    default:
+        cprintf("Unknown interrupt: cause %lu\n", (unsigned long)cause);
+        print_trapframe(tf);
+        break;
+    }
+}
+
+void exception_handler(struct trapframe *tf) {
+    switch (tf->cause) {
+    case CAUSE_ILLEGAL_INSTRUCTION:
+        cprintf("Illegal instruction at %p\n", (void *)tf->epc);
+        // This lab uses 16-bit and 32-bit instructions; read a halfword so
+        // a 32-bit instruction at an address aligned to two bytes is valid.
+        tf->epc += (*(const uint16_t *)tf->epc & 3) == 3 ? 4 : 2;
+        break;
+    case CAUSE_BREAKPOINT:
+        cprintf("Breakpoint at %p\n", (void *)tf->epc);
+        tf->epc += (*(const uint16_t *)tf->epc & 3) == 3 ? 4 : 2;
+        break;
+    default:
+        print_trapframe(tf);
+        break;
+    }
+}
 
 static inline void trap_dispatch(struct trapframe *tf) {
     if ((intptr_t)tf->cause < 0) {
